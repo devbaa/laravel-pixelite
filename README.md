@@ -1,1 +1,1 @@
-# laravel-openpixel
+# Laravel Pixel
