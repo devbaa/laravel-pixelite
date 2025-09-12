@@ -66,7 +66,7 @@ class ProcessVisitRaw implements ShouldQueue
 
     private function initializeGeoReader(): void
     {
-        $geoDbPath = storage_path('app/GeoLite2-City.mmdb');
+        $geoDbPath = storage_path('app/private/GeoLite2-City.mmdb');
 
         if (! file_exists($geoDbPath)) {
             Log::warning('GeoLite2 database not found', ['path' => $geoDbPath]);
@@ -152,12 +152,32 @@ class ProcessVisitRaw implements ShouldQueue
             'screen_id' => $screenId,
             'timezone' => $payload_js['timezone'] ?? null,
             'locale' => $payload['locale'] ?? null,
-            'payload' => $payload,
-            'payload_js' => $payload_js,
+            'payload' => json_encode($payload),
+            'payload_js' => json_encode($payload_js),
             'left_at' => $raw->left_at,
             'total_time' => $raw->total_time,
             'created_at' => $raw->created_at,
         ]);
+    }
+
+    private function ipv6ToIpv4Mapped(string $binaryIp): ?string
+    {
+        // Must be 16 bytes to be IPv6
+        if (strlen($binaryIp) !== 16) {
+            return null;
+        }
+
+        // Check if it's an IPv4-mapped IPv6 (first 12 bytes should match)
+        $prefix = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff";
+
+        if (strncmp($binaryIp, $prefix, 12) === 0) {
+            // Extract last 4 bytes as IPv4
+            $ipv4bin = substr($binaryIp, 12);
+            return inet_ntop($ipv4bin);
+        }
+
+        // Not an IPv4-mapped IPv6
+        return inet_ntop($binaryIp);
     }
 
     private function processGeo(?string $ip): array
@@ -168,17 +188,19 @@ class ProcessVisitRaw implements ShouldQueue
 
         try {
             // Convert binary IP to string for MaxMind
-            $ipString = inet_ntop($ip);
+            $ipString = $this->ipv6ToIpv4Mapped($ip);
             if ($ipString === false) {
                 return ['id' => null, 'country_code' => null];
             }
 
             $record = $this->geoReader->get($ipString);
+
             if (! $record) {
                 return ['id' => null, 'country_code' => null];
             }
 
             $geoData = [
+                'ip' => $ip,
                 'country_code' => $record['country']['iso_code'] ?? null,
                 'region' => $record['subdivisions'][0]['names']['en'] ?? null,
                 'city' => $record['city']['names']['en'] ?? null,
@@ -190,6 +212,7 @@ class ProcessVisitRaw implements ShouldQueue
             ];
 
             $geoHash = $this->generateHash([
+                $geoData['ip'],
                 $geoData['country_code'],
                 $geoData['region'],
                 $geoData['city'],
@@ -200,7 +223,7 @@ class ProcessVisitRaw implements ShouldQueue
 
             $geoId = $this->getOrCreateRecord(Geo::class, $geoHash, $geoData);
 
-            return ['id' => $geoId, 'country_code' => $countryCode];
+            return ['id' => $geoId, 'country_code' => $geoData['country_code']];
 
         } catch (Exception $e) {
             Log::warning('GeoIP lookup failed', [
