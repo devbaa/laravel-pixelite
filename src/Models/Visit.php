@@ -53,7 +53,7 @@ class Visit extends Model
 
     public function referer(): BelongsTo
     {
-        return $this->belongsTo(Referrer::class);
+        return $this->belongsTo(Referer::class);
     }
 
     public function utm(): BelongsTo
