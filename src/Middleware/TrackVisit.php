@@ -41,14 +41,13 @@ class TrackVisit
      */
     private function shouldSkipTracking(Request $request): bool
     {
-        // Skip for API routes, AJAX requests, or specific paths
         return $request->expectsJson()
                || $request->ajax()
                || $request->is('api/*')
                || $request->is('admin/*')
                || $request->is('_debugbar/*')
                || $request->isMethod('POST') // Only track GET requests
-               || ! $request->route(); // Skip if no route found
+               || ! $request->route();
     }
 
     /**
