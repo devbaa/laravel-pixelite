@@ -173,6 +173,7 @@ class ProcessVisitRaw implements ShouldQueue
         if (strncmp($binaryIp, $prefix, 12) === 0) {
             // Extract last 4 bytes as IPv4
             $ipv4bin = substr($binaryIp, 12);
+
             return inet_ntop($ipv4bin);
         }
 

@@ -33,8 +33,9 @@ class ProcessVisitCommand extends Command
 
             $this->info('Processing completed successfully!');
         } catch (\Exception $e) {
-            $this->error('Processing failed: ' . $e->getMessage());
-            $this->error('Stack trace: ' . $e->getTraceAsString());
+            $this->error('Processing failed: '.$e->getMessage());
+            $this->error('Stack trace: '.$e->getTraceAsString());
+
             return 1;
         }
 
