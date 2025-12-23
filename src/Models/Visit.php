@@ -58,7 +58,7 @@ class Visit extends Model
 
     public function utm(): BelongsTo
     {
-        return $this->belongsTo(UtmParam::class, 'utm_id');
+        return $this->belongsTo(Utm::class, 'utm_id');
     }
 
     public function click(): BelongsTo

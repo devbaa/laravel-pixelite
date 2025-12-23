@@ -7,7 +7,7 @@ use Boralp\Pixelite\Models\Geo;
 use Boralp\Pixelite\Models\Referer;
 use Boralp\Pixelite\Models\Screen;
 use Boralp\Pixelite\Models\UserAgent;
-use Boralp\Pixelite\Models\UtmParam;
+use Boralp\Pixelite\Models\Utm;
 use Boralp\Pixelite\Models\Visit;
 use Boralp\Pixelite\Models\VisitRaw;
 use Exception;
@@ -555,7 +555,7 @@ class ProcessVisitRaw implements ShouldQueue
 
         $hash = $this->generateHash(array_values($utmData));
 
-        return $this->getOrCreateRecord(UtmParam::class, $hash, $utmData);
+        return $this->getOrCreateRecord(Utm::class, $hash, $utmData);
     }
 
     private function processClickIds(array $payload): ?int
@@ -611,7 +611,7 @@ class ProcessVisitRaw implements ShouldQueue
             return $this->hashCache[$cacheKey];
         }
 
-        // Try to find existing record
+        // Try to find existing recorphpd
         $record = $modelClass::where('hash', $hash)->first();
 
         if (! $record) {
