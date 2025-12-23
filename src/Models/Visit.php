@@ -71,13 +71,47 @@ class Visit extends Model
         return $this->belongsTo(Screen::class, 'screen_id');
     }
 
-    public function setIpAttribute(?string $value): void
+    public function setIpAttribute(mixed $value): void
     {
-        $this->attributes['ip'] = $value ? inet_pton($value) : null;
+        if (! is_string($value) || $value === '') {
+            $this->attributes['ip'] = null;
+
+            return;
+        }
+
+        // remove null bytes and control characters
+        $value = trim(preg_replace('/[\x00-\x1F\x7F]/u', '', $value));
+
+        // handle forwarded headers: take first IP only
+        if (str_contains($value, ',')) {
+            $value = trim(explode(',', $value)[0]);
+        }
+
+        // validate IPv4 / IPv6
+        if (! filter_var($value, FILTER_VALIDATE_IP)) {
+            $this->attributes['ip'] = null;
+
+            return;
+        }
+
+        $this->attributes['ip'] = inet_pton($value);
     }
 
-    public function getIpAttribute(?string $value): ?string
+    public function getIpAttribute(mixed $value): ?string
     {
-        return $value ? inet_ntop($value) : null;
+        if ($value === null) {
+            return null;
+        }
+
+        $len = strlen($value);
+
+        // only valid binary lengths
+        if ($len !== 4 && $len !== 16) {
+            return null;
+        }
+
+        $ip = inet_ntop($value);
+
+        return $ip === false ? null : $ip;
     }
 }
