@@ -10,6 +10,7 @@ class Referer extends Model
     const UPDATED_AT = null;
 
     protected $fillable = [
+        'raw',
         'domain',
         'path',
         'hash',
