@@ -144,17 +144,17 @@ class ProcessVisitRaw implements ShouldQueue
             'geo_id' => $geoData['id'] ?? null,
             'user_agent_id' => $userAgentData['id'] ?? null,
             'referer_id' => $refererData['id'] ?? null,
-            'referrer_domain' => $refererData['domain'] ?? null,    // From processReferer
-            'device_category' => $userAgentData['device_category'] ?? false,    // From processUserAgent
-            'country_code' => $geoData['country_code'] ?? null,     // From processGeo
+            'referer_domain' => $refererData['domain'] ?? null,
+            'device_category' => $userAgentData['device_category'] ?? null,
+            'os_name' => $userAgentData['os_name'] ?? null,
+            'country_code' => $geoData['country_code'] ?? null,
             'utm_id' => $utmId,
             'click_id' => $clickId,
             'screen_id' => $screenId,
-            'timezone' => $payload_js['timezone'] ?? null,
+            'timezone' => $payload_js['timezone_offset'] ?? null,
             'locale' => $payload['locale'] ?? null,
             'payload' => json_encode($payload),
             'payload_js' => json_encode($payload_js),
-            'left_at' => $raw->left_at,
             'total_time' => $raw->total_time,
             'created_at' => $raw->created_at,
         ]);
@@ -186,11 +186,12 @@ class ProcessVisitRaw implements ShouldQueue
         if (! $ip || ! $this->geoReader) {
             return ['id' => null, 'country_code' => null];
         }
-
+        $ipString = null;
+        
         try {
             // Convert binary IP to string for MaxMind
             $ipString = $this->ipv6ToIpv4Mapped($ip);
-            if ($ipString === false) {
+            if ($ipString === null) {
                 return ['id' => null, 'country_code' => null];
             }
 
@@ -611,7 +612,7 @@ class ProcessVisitRaw implements ShouldQueue
             return $this->hashCache[$cacheKey];
         }
 
-        // Try to find existing recorphpd
+        // Try to find existing record
         $record = $modelClass::where('hash', $hash)->first();
 
         if (! $record) {
