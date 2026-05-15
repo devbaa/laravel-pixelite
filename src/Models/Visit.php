@@ -16,7 +16,7 @@ class Visit extends Model
         'route_params',
         'ip',
         'country_code',
-        'device_type',
+        'device_category',
         'os_name',
         'referer_domain',
         'geo_id',
@@ -34,7 +34,6 @@ class Visit extends Model
 
     protected $casts = [
         'route_params' => 'array',
-        'ip' => 'binary',
         'payload' => 'array',
         'timezone' => 'integer',
         'total_time' => 'integer',
