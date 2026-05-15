@@ -3,6 +3,8 @@
 namespace Boralp\Pixelite\Middleware;
 
 use Boralp\Pixelite\Models\VisitRaw;
+use Boralp\Pixelite\Services\IpAnonymizer;
+use Boralp\Pixelite\Services\PrivacyService;
 use Closure;
 use Exception;
 use Illuminate\Http\Request;
@@ -11,34 +13,28 @@ use Symfony\Component\HttpFoundation\Response;
 
 class TrackVisit
 {
-    /**
-     * Handle an incoming request and track visit data
-     */
+    public function __construct(
+        private readonly PrivacyService $privacy,
+        private readonly IpAnonymizer $ipAnonymizer,
+    ) {}
+
     public function handle(Request $request, Closure $next): Response
     {
-        // Skip tracking for non-trackable requests
-        if ($this->shouldSkipTracking($request)) {
-            return $next($request);
-        }
-
-        try {
-            $this->trackVisit($request);
-        } catch (Exception $e) {
-            // Don't break the request flow if tracking fails
-            Log::error('Visit tracking failed', [
-                'error' => $e->getMessage(),
-                'url' => $request->fullUrl(),
-                'user_agent' => $request->userAgent(),
-                'ip' => $request->ip(),
-            ]);
+        if (! $this->shouldSkipTracking($request) && $this->privacy->isTrackingAllowed($request)) {
+            try {
+                $this->trackVisit($request);
+            } catch (Exception $e) {
+                Log::error('Visit tracking failed', [
+                    'error'      => $e->getMessage(),
+                    'url'        => $request->fullUrl(),
+                    'user_agent' => $request->userAgent(),
+                ]);
+            }
         }
 
         return $next($request);
     }
 
-    /**
-     * Determine if tracking should be skipped
-     */
     private function shouldSkipTracking(Request $request): bool
     {
         return $request->expectsJson()
@@ -46,133 +42,138 @@ class TrackVisit
                || $request->is('api/*')
                || $request->is('admin/*')
                || $request->is('_debugbar/*')
-               || $request->isMethod('POST') // Only track GET requests
+               || $request->isMethod('POST')
                || ! $request->route();
     }
 
-    /**
-     * Track the visit by creating VisitRaw record
-     */
     private function trackVisit(Request $request): void
     {
-        $payload = $this->buildPayload($request);
-        $ip = $this->processIpAddress($request->ip());
+        $collect = config('pixelite.collect', []);
 
-        if (! $ip) {
-            Log::warning('Invalid IP address for tracking', ['ip' => $request->ip()]);
+        $ip = $this->resolveIp($request->ip());
+
+        // Abort only when the original IP was malformed (not when anonymised to null)
+        if ($ip === false) {
+            Log::warning('Invalid IP address — visit not tracked', ['ip' => $request->ip()]);
 
             return;
         }
 
-        // Create raw visit record
+        $crossSession = config('pixelite.profiling.cross_session', true);
+
         $raw = VisitRaw::create([
-            'user_id' => auth()->id(),
-            'session_id' => $request->session()->getId(),
-            'route_name' => $request->route()->getName(),
+            'user_id'     => $crossSession ? auth()->id() : null,
+            'session_id'  => $request->session()->getId(),
+            'route_name'  => $request->route()->getName(),
             'route_params' => $this->sanitizeRouteParams($request->route()->parameters()),
-            'ip' => $ip,
-            'user_agent' => $this->sanitizeUserAgent($request->userAgent()),
-            'payload' => $payload,
-            'total_time' => null,
+            'ip'          => $ip ?: null, // null is acceptable (full anonymisation)
+            'user_agent'  => ($collect['user_agent'] ?? true) ? $this->sanitizeUserAgent($request->userAgent()) : null,
+            'payload'     => $this->buildPayload($request, $collect),
+            'total_time'  => null,
         ]);
 
-        // Store visit ID in session for lifecycle tracking
         $request->session()->put('pixelite_trace_id', $raw->id);
-
-        Log::debug('Visit tracked', ['visit_id' => $raw->id, 'route' => $request->route()->getName()]);
     }
 
     /**
-     * Build payload from request data
+     * Return the (anonymised) binary IP, null for full-anonymisation, or false for invalid.
+     *
+     * @return string|null|false
      */
-    private function buildPayload(Request $request): array
+    private function resolveIp(?string $rawIp): string|null|false
+    {
+        if (! $rawIp || ! filter_var($rawIp, FILTER_VALIDATE_IP)) {
+            return false;
+        }
+
+        $level = config('pixelite.ip.anonymization', 'none');
+        $ip = $this->ipAnonymizer->anonymize($rawIp, $level);
+
+        // full anonymisation — valid visit, just no IP stored
+        if ($ip === null && $level === 'full') {
+            return null;
+        }
+
+        if (! $ip) {
+            return false;
+        }
+
+        $binary = inet_pton($ip);
+        if ($binary === false) {
+            return false;
+        }
+
+        // Store IPv4 as IPv4-mapped IPv6 (16 bytes)
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            $binary = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff".$binary;
+        }
+
+        return $binary;
+    }
+
+    private function buildPayload(Request $request, array $collect): array
     {
         $payload = [];
 
-        // UTM Parameters
-        $utmParams = $this->extractUtmParams($request);
-        if (! empty(array_filter($utmParams))) {
-            $payload['utm'] = $utmParams;
+        if ($collect['utm'] ?? true) {
+            $utm = $this->extractUtmParams($request);
+            if (! empty(array_filter($utm))) {
+                $payload['utm'] = $utm;
+            }
         }
 
-        // Click IDs
-        $clickIds = $this->extractClickIds($request);
-        if (! empty(array_filter($clickIds))) {
-            $payload = array_merge($payload, $clickIds);
+        if ($collect['click_ids'] ?? true) {
+            $clickIds = $this->extractClickIds($request);
+            if (! empty(array_filter($clickIds))) {
+                $payload = array_merge($payload, $clickIds);
+            }
         }
 
-        // Additional tracking data
-        $payload['referrer'] = $this->sanitizeReferrer($request->header('referer'));
-        $payload['locale'] = $request->getPreferredLanguage();
+        if ($collect['referer'] ?? true) {
+            $referrer = $this->sanitizeReferrer($request->header('referer'));
+            if ($referrer !== null) {
+                $payload['referrer'] = $referrer;
+            }
+        }
 
-        return array_filter($payload); // Remove null/empty values
+        if ($collect['locale'] ?? true) {
+            $payload['locale'] = $request->getPreferredLanguage();
+        }
+
+        return array_filter($payload);
     }
 
-    /**
-     * Extract UTM parameters
-     */
     private function extractUtmParams(Request $request): array
     {
         return [
-            'utm_source' => $this->sanitizeString($request->get('utm_source'), 255),
-            'utm_medium' => $this->sanitizeString($request->get('utm_medium'), 255),
+            'utm_source'   => $this->sanitizeString($request->get('utm_source'), 255),
+            'utm_medium'   => $this->sanitizeString($request->get('utm_medium'), 255),
             'utm_campaign' => $this->sanitizeString($request->get('utm_campaign'), 255),
-            'utm_term' => $this->sanitizeString($request->get('utm_term'), 255),
-            'utm_content' => $this->sanitizeString($request->get('utm_content'), 500),
+            'utm_term'     => $this->sanitizeString($request->get('utm_term'), 255),
+            'utm_content'  => $this->sanitizeString($request->get('utm_content'), 500),
         ];
     }
 
-    /**
-     * Extract click IDs
-     */
     private function extractClickIds(Request $request): array
     {
         return [
-            'gclid' => $this->sanitizeString($request->get('gclid'), 255),
-            'fbclid' => $this->sanitizeString($request->get('fbclid'), 255),
-            'msclkid' => $this->sanitizeString($request->get('msclkid'), 255),
-            'ttclid' => $this->sanitizeString($request->get('ttclid'), 255),
+            'gclid'    => $this->sanitizeString($request->get('gclid'), 255),
+            'fbclid'   => $this->sanitizeString($request->get('fbclid'), 255),
+            'msclkid'  => $this->sanitizeString($request->get('msclkid'), 255),
+            'ttclid'   => $this->sanitizeString($request->get('ttclid'), 255),
             'li_fat_id' => $this->sanitizeString($request->get('li_fat_id'), 255),
         ];
     }
 
-    /**
-     * Process and validate IP address
-     */
-    private function processIpAddress(?string $ip): ?string
+    private function sanitizeUserAgent(?string $ua): ?string
     {
-        if (! $ip || ! filter_var($ip, FILTER_VALIDATE_IP)) {
+        if (! $ua) {
             return null;
         }
 
-        $binaryIp = inet_pton($ip);
-        if ($binaryIp === false) {
-            return null;
-        }
-
-        // Ensure IPv4 addresses are stored as IPv4-mapped IPv6 (16 bytes)
-        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-            $binaryIp = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff".$binaryIp;
-        }
-
-        return $binaryIp;
+        return mb_substr(trim($ua), 0, 1024);
     }
 
-    /**
-     * Sanitize user agent string
-     */
-    private function sanitizeUserAgent(?string $userAgent): ?string
-    {
-        if (! $userAgent) {
-            return null;
-        }
-
-        return mb_substr(trim($userAgent), 0, 1024);
-    }
-
-    /**
-     * Sanitize referrer URL
-     */
     private function sanitizeReferrer(?string $referrer): ?string
     {
         if (! $referrer || trim($referrer) === '') {
@@ -181,7 +182,6 @@ class TrackVisit
 
         $referrer = trim($referrer);
 
-        // Basic URL validation
         if (! filter_var($referrer, FILTER_VALIDATE_URL)) {
             return null;
         }
@@ -189,9 +189,6 @@ class TrackVisit
         return mb_substr($referrer, 0, 1024);
     }
 
-    /**
-     * Sanitize route parameters
-     */
     private function sanitizeRouteParams(?array $params): ?array
     {
         if (! $params || empty($params)) {
@@ -208,9 +205,6 @@ class TrackVisit
         return ! empty($sanitized) ? $sanitized : null;
     }
 
-    /**
-     * Sanitize string input
-     */
     private function sanitizeString(?string $value, int $maxLength = 255): ?string
     {
         if (! $value || trim($value) === '') {

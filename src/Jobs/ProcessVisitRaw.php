@@ -66,7 +66,7 @@ class ProcessVisitRaw implements ShouldQueue
 
     private function initializeGeoReader(): void
     {
-        $geoDbPath = storage_path('app/private/GeoLite2-City.mmdb');
+        $geoDbPath = config('pixelite.geo_db_path', storage_path('app/private/GeoLite2-City.mmdb'));
 
         if (! file_exists($geoDbPath)) {
             Log::warning('GeoLite2 database not found', ['path' => $geoDbPath]);
@@ -125,38 +125,45 @@ class ProcessVisitRaw implements ShouldQueue
     {
         $payload = $raw->payload ?? [];
         $payload_js = $raw->payload_js ?? [];
+        $collect = config('pixelite.collect', []);
+        $crossSession = config('pixelite.profiling.cross_session', true);
+        $behavioral = config('pixelite.profiling.behavioral', true);
 
-        // Process all normalized data
-        $geoData = $this->processGeo($raw->ip);
-        $userAgentData = $this->processUserAgent($raw->user_agent);
-        $refererData = $this->processReferer($payload['referer'] ?? null);
-        $utmId = $this->processUtm($payload['utm'] ?? null);
-        $clickId = $this->processClickIds($payload);
-        $screenId = $this->processScreen($payload_js['screen'] ?? null);
+        $null2 = ['id' => null, 'country_code' => null];
+        $null3 = ['id' => null, 'device_category' => null, 'os_name' => null];
+        $nullRef = ['id' => null, 'domain' => null];
 
-        // Create visit record
+        $geoData       = ($collect['geo'] ?? true)        ? $this->processGeo($raw->ip)                         : $null2;
+        $userAgentData = ($collect['user_agent'] ?? true) ? $this->processUserAgent($raw->user_agent)            : $null3;
+        $refererData   = ($collect['referer'] ?? true)    ? $this->processReferer($payload['referer'] ?? null)   : $nullRef;
+        $utmId         = ($collect['utm'] ?? true)        ? $this->processUtm($payload['utm'] ?? null)           : null;
+        $clickId       = ($collect['click_ids'] ?? true)  ? $this->processClickIds($payload)                     : null;
+        $screenId      = ($collect['screen'] ?? true) && $behavioral
+                            ? $this->processScreen($payload_js['screen'] ?? null)
+                            : null;
+
         Visit::create([
-            'user_id' => $raw->user_id,
-            'session_id' => $raw->session_id,
-            'route_name' => $raw->route_name,
-            'route_params' => $raw->route_params,
-            'ip' => $raw->ip,
-            'geo_id' => $geoData['id'] ?? null,
-            'user_agent_id' => $userAgentData['id'] ?? null,
-            'referer_id' => $refererData['id'] ?? null,
+            'user_id'        => $crossSession ? $raw->user_id : null,
+            'session_id'     => $raw->session_id,
+            'route_name'     => $raw->route_name,
+            'route_params'   => $raw->route_params,
+            'ip'             => $raw->ip,
+            'geo_id'         => $geoData['id'] ?? null,
+            'user_agent_id'  => $userAgentData['id'] ?? null,
+            'referer_id'     => $refererData['id'] ?? null,
             'referer_domain' => $refererData['domain'] ?? null,
             'device_category' => $userAgentData['device_category'] ?? null,
-            'os_name' => $userAgentData['os_name'] ?? null,
-            'country_code' => $geoData['country_code'] ?? null,
-            'utm_id' => $utmId,
-            'click_id' => $clickId,
-            'screen_id' => $screenId,
-            'timezone' => $payload_js['timezone_offset'] ?? null,
-            'locale' => $payload['locale'] ?? null,
-            'payload' => json_encode($payload),
-            'payload_js' => json_encode($payload_js),
-            'total_time' => $raw->total_time,
-            'created_at' => $raw->created_at,
+            'os_name'        => $userAgentData['os_name'] ?? null,
+            'country_code'   => $geoData['country_code'] ?? null,
+            'utm_id'         => $utmId,
+            'click_id'       => $clickId,
+            'screen_id'      => $screenId,
+            'timezone'       => ($collect['timezone'] ?? true) && $behavioral ? ($payload_js['timezone_offset'] ?? null) : null,
+            'locale'         => ($collect['locale'] ?? true) ? ($payload['locale'] ?? null) : null,
+            'payload'        => json_encode($payload),
+            'payload_js'     => json_encode($payload_js),
+            'total_time'     => ($collect['total_time'] ?? true) && $behavioral ? $raw->total_time : null,
+            'created_at'     => $raw->created_at,
         ]);
     }
 
