@@ -110,6 +110,33 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Multi-tenancy & Custom Identifiers
+    |--------------------------------------------------------------------------
+    | team_id   — store a team / organisation ID alongside every visit.
+    |             Mirrors user_id but for team-scoped multi-tenant applications.
+    |
+    | custom_id — store any string identifier (e.g. shop_id, account_id).
+    |             The `label` is shown in command output and the install wizard.
+    |             The `resolver` uses dot-notation to pull the value at runtime:
+    |               user.shop_id     → auth()->user()?->shop_id
+    |               session.shop_id  → $request->session()->get('shop_id')
+    |               request.shop_id  → $request->input('shop_id')
+    |               header.X-Shop-Id → $request->header('X-Shop-Id')
+    */
+    'tracking' => [
+        'team_id' => [
+            'enabled'  => env('PIXELITE_TRACK_TEAM_ID', false),
+            'resolver' => env('PIXELITE_TEAM_ID_RESOLVER', 'user.team_id'),
+        ],
+        'custom_id' => [
+            'enabled'  => env('PIXELITE_TRACK_CUSTOM_ID', false),
+            'label'    => env('PIXELITE_CUSTOM_ID_LABEL', 'custom_id'),
+            'resolver' => env('PIXELITE_CUSTOM_ID_RESOLVER', 'user.custom_id'),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | GeoIP Database Path
     |--------------------------------------------------------------------------
     | Path to the MaxMind GeoLite2-City.mmdb file.

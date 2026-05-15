@@ -149,6 +149,38 @@ class InstallCommand extends Command
             $settings['PIXELITE_OPT_OUT_ENABLED'] === 'true'
         ) ? 'true' : 'false';
 
+        // --- Team ID ---
+        $trackTeam = $this->confirm(
+            'Track a team / organisation ID with each visit? (multi-tenancy)',
+            $settings['PIXELITE_TRACK_TEAM_ID'] === 'true'
+        );
+        $settings['PIXELITE_TRACK_TEAM_ID'] = $trackTeam ? 'true' : 'false';
+
+        if ($trackTeam) {
+            $settings['PIXELITE_TEAM_ID_RESOLVER'] = $this->ask(
+                'How is team_id resolved? (user.team_id | session.key | request.key | header.name)',
+                $settings['PIXELITE_TEAM_ID_RESOLVER']
+            );
+        }
+
+        // --- Custom ID ---
+        $trackCustom = $this->confirm(
+            'Track a custom string identifier? (e.g. shop_id, account_id, tenant_id)',
+            $settings['PIXELITE_TRACK_CUSTOM_ID'] === 'true'
+        );
+        $settings['PIXELITE_TRACK_CUSTOM_ID'] = $trackCustom ? 'true' : 'false';
+
+        if ($trackCustom) {
+            $settings['PIXELITE_CUSTOM_ID_LABEL'] = $this->ask(
+                'What is the human-readable name for this identifier? (e.g. shop_id)',
+                $settings['PIXELITE_CUSTOM_ID_LABEL']
+            );
+            $settings['PIXELITE_CUSTOM_ID_RESOLVER'] = $this->ask(
+                'How is it resolved? (user.shop_id | session.key | request.key | header.name)',
+                $settings['PIXELITE_CUSTOM_ID_RESOLVER']
+            );
+        }
+
         return $settings;
     }
 
@@ -195,6 +227,11 @@ class InstallCommand extends Command
                 'PIXELITE_CROSS_SESSION'         => 'false',
                 'PIXELITE_BEHAVIORAL'            => 'false',
                 'PIXELITE_COLLECT_SCREEN'        => 'false',
+                'PIXELITE_TRACK_TEAM_ID'         => 'false',
+                'PIXELITE_TEAM_ID_RESOLVER'      => 'user.team_id',
+                'PIXELITE_TRACK_CUSTOM_ID'       => 'false',
+                'PIXELITE_CUSTOM_ID_LABEL'       => 'custom_id',
+                'PIXELITE_CUSTOM_ID_RESOLVER'    => 'user.custom_id',
             ],
             'ccpa' => [
                 'PIXELITE_COMPLIANCE_MODE'       => 'ccpa',
@@ -210,6 +247,11 @@ class InstallCommand extends Command
                 'PIXELITE_CROSS_SESSION'         => 'true',
                 'PIXELITE_BEHAVIORAL'            => 'true',
                 'PIXELITE_COLLECT_SCREEN'        => 'true',
+                'PIXELITE_TRACK_TEAM_ID'         => 'false',
+                'PIXELITE_TEAM_ID_RESOLVER'      => 'user.team_id',
+                'PIXELITE_TRACK_CUSTOM_ID'       => 'false',
+                'PIXELITE_CUSTOM_ID_LABEL'       => 'custom_id',
+                'PIXELITE_CUSTOM_ID_RESOLVER'    => 'user.custom_id',
             ],
             'kvkk' => [
                 'PIXELITE_COMPLIANCE_MODE'       => 'kvkk',
@@ -225,6 +267,11 @@ class InstallCommand extends Command
                 'PIXELITE_CROSS_SESSION'         => 'false',
                 'PIXELITE_BEHAVIORAL'            => 'false',
                 'PIXELITE_COLLECT_SCREEN'        => 'false',
+                'PIXELITE_TRACK_TEAM_ID'         => 'false',
+                'PIXELITE_TEAM_ID_RESOLVER'      => 'user.team_id',
+                'PIXELITE_TRACK_CUSTOM_ID'       => 'false',
+                'PIXELITE_CUSTOM_ID_LABEL'       => 'custom_id',
+                'PIXELITE_CUSTOM_ID_RESOLVER'    => 'user.custom_id',
             ],
             'multi' => [
                 // Strictest intersection of GDPR + CCPA + KVKK
@@ -241,6 +288,11 @@ class InstallCommand extends Command
                 'PIXELITE_CROSS_SESSION'         => 'false',
                 'PIXELITE_BEHAVIORAL'            => 'false',
                 'PIXELITE_COLLECT_SCREEN'        => 'false',
+                'PIXELITE_TRACK_TEAM_ID'         => 'false',
+                'PIXELITE_TEAM_ID_RESOLVER'      => 'user.team_id',
+                'PIXELITE_TRACK_CUSTOM_ID'       => 'false',
+                'PIXELITE_CUSTOM_ID_LABEL'       => 'custom_id',
+                'PIXELITE_CUSTOM_ID_RESOLVER'    => 'user.custom_id',
             ],
             default => [ // none
                 'PIXELITE_COMPLIANCE_MODE'       => 'none',
@@ -256,6 +308,11 @@ class InstallCommand extends Command
                 'PIXELITE_CROSS_SESSION'         => 'true',
                 'PIXELITE_BEHAVIORAL'            => 'true',
                 'PIXELITE_COLLECT_SCREEN'        => 'true',
+                'PIXELITE_TRACK_TEAM_ID'         => 'false',
+                'PIXELITE_TEAM_ID_RESOLVER'      => 'user.team_id',
+                'PIXELITE_TRACK_CUSTOM_ID'       => 'false',
+                'PIXELITE_CUSTOM_ID_LABEL'       => 'custom_id',
+                'PIXELITE_CUSTOM_ID_RESOLVER'    => 'user.custom_id',
             ],
         };
     }
@@ -291,6 +348,8 @@ class InstallCommand extends Command
             ? $s['PIXELITE_RETENTION_VISITS_DAYS'].' days'
             : 'Disabled';
 
+        $customIdLabel = ! empty($s['PIXELITE_CUSTOM_ID_LABEL']) ? $s['PIXELITE_CUSTOM_ID_LABEL'] : 'custom_id';
+
         $this->table(
             ['Setting', 'Value'],
             [
@@ -304,6 +363,8 @@ class InstallCommand extends Command
                 ['Cross-session profiling',   $yn($s['PIXELITE_CROSS_SESSION'])],
                 ['Behavioural tracking',      $yn($s['PIXELITE_BEHAVIORAL'])],
                 ['Screen dimensions',         $s['PIXELITE_COLLECT_SCREEN'] === 'true' ? 'Collected' : 'Not collected'],
+                ['Track team_id',             $yn($s['PIXELITE_TRACK_TEAM_ID'])],
+                ["Track {$customIdLabel}",    $yn($s['PIXELITE_TRACK_CUSTOM_ID'])],
             ]
         );
     }

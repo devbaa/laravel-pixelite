@@ -115,7 +115,7 @@ class ProcessVisitRaw implements ShouldQueue
     private function fetchBatch()
     {
         return VisitRaw::query()
-            ->select(['id', 'user_id', 'session_id', 'route_name', 'route_params', 'ip', 'user_agent', 'payload', 'payload_js', 'total_time', 'created_at'])
+            ->select(['id', 'user_id', 'team_id', 'session_id', 'custom_id', 'route_name', 'route_params', 'ip', 'user_agent', 'payload', 'payload_js', 'total_time', 'created_at'])
             ->orderBy('id')
             ->limit($this->batchSize)
             ->get();
@@ -144,7 +144,9 @@ class ProcessVisitRaw implements ShouldQueue
 
         Visit::create([
             'user_id'        => $crossSession ? $raw->user_id : null,
+            'team_id'        => $raw->team_id,
             'session_id'     => $raw->session_id,
+            'custom_id'      => $raw->custom_id,
             'route_name'     => $raw->route_name,
             'route_params'   => $raw->route_params,
             'ip'             => $raw->ip,

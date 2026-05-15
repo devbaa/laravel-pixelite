@@ -14,7 +14,9 @@ return new class extends Migration
         Schema::create('visit_raws', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('user_id')->nullable()->index();
+            $table->unsignedBigInteger('team_id')->nullable()->index();
             $table->string('session_id')->nullable()->index();
+            $table->string('custom_id', 255)->nullable()->index();
             $table->string('route_name')->nullable();
             $table->json('route_params')->nullable();
             $table->binary('ip', 16)->nullable();

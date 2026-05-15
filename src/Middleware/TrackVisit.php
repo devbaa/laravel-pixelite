@@ -63,7 +63,9 @@ class TrackVisit
 
         $raw = VisitRaw::create([
             'user_id'     => $crossSession ? auth()->id() : null,
+            'team_id'     => $this->resolveTrackedId('tracking.team_id', $request),
             'session_id'  => $request->session()->getId(),
+            'custom_id'   => $this->resolveCustomId($request),
             'route_name'  => $request->route()->getName(),
             'route_params' => $this->sanitizeRouteParams($request->route()->parameters()),
             'ip'          => $ip ?: null, // null is acceptable (full anonymisation)
@@ -109,6 +111,66 @@ class TrackVisit
         }
 
         return $binary;
+    }
+
+    /**
+     * Resolve team_id (integer) using the configured dot-notation resolver.
+     * Returns null when tracking is disabled or the resolved value is empty.
+     */
+    private function resolveTrackedId(string $configKey, Request $request): ?int
+    {
+        $cfg = config($configKey, []);
+        if (empty($cfg['enabled'])) {
+            return null;
+        }
+
+        $value = $this->resolveByDotNotation($cfg['resolver'] ?? '', $request);
+
+        return $value !== null && $value !== '' ? (int) $value : null;
+    }
+
+    /**
+     * Resolve custom_id (string) using the configured dot-notation resolver.
+     * Returns null when tracking is disabled or the resolved value is empty.
+     */
+    private function resolveCustomId(Request $request): ?string
+    {
+        $cfg = config('pixelite.tracking.custom_id', []);
+        if (empty($cfg['enabled'])) {
+            return null;
+        }
+
+        $value = $this->resolveByDotNotation($cfg['resolver'] ?? '', $request);
+
+        return $value !== null && $value !== ''
+            ? $this->sanitizeString((string) $value, 255)
+            : null;
+    }
+
+    /**
+     * Resolve a value using "source.key" dot-notation.
+     *
+     * Supported sources:
+     *   user.{attr}     → auth()->user()?->{attr}
+     *   session.{key}   → session value
+     *   request.{key}   → query / post input
+     *   header.{name}   → HTTP request header
+     */
+    private function resolveByDotNotation(string $resolver, Request $request): mixed
+    {
+        [$source, $key] = array_pad(explode('.', $resolver, 2), 2, null);
+
+        if (! $key) {
+            return null;
+        }
+
+        return match ($source) {
+            'user'    => auth()->user()?->{$key},
+            'session' => $request->session()->get($key),
+            'request' => $request->input($key),
+            'header'  => $request->header($key),
+            default   => null,
+        };
     }
 
     private function buildPayload(Request $request, array $collect): array

@@ -10,7 +10,9 @@ class VisitRaw extends Model
 
     protected $fillable = [
         'user_id',
+        'team_id',
         'session_id',
+        'custom_id',
         'route_name',
         'route_params',
         'ip',

@@ -56,6 +56,52 @@ class PrivacyService
     }
 
     /**
+     * Delete all visit data for a team (multi-tenant erasure).
+     */
+    public function deleteByTeamId(int $teamId): array
+    {
+        $raw = VisitRaw::where('team_id', $teamId)->delete();
+        $visits = Visit::where('team_id', $teamId)->delete();
+        $total = $raw + $visits;
+
+        $this->logDsr('deletion', (string) $teamId, 'team_id', $total);
+
+        return ['raw_deleted' => $raw, 'visits_deleted' => $visits, 'total' => $total];
+    }
+
+    /**
+     * Delete all visit data matching a custom identifier (e.g. shop_id).
+     */
+    public function deleteByCustomId(string $customId): array
+    {
+        $raw = VisitRaw::where('custom_id', $customId)->delete();
+        $visits = Visit::where('custom_id', $customId)->delete();
+        $total = $raw + $visits;
+
+        $label = config('pixelite.tracking.custom_id.label', 'custom_id');
+        $this->logDsr('deletion', $customId, $label, $total);
+
+        return ['raw_deleted' => $raw, 'visits_deleted' => $visits, 'total' => $total];
+    }
+
+    /**
+     * Export all visit data for a team.
+     */
+    public function exportByTeamId(int $teamId): array
+    {
+        $visits = Visit::where('team_id', $teamId)
+            ->with(['geo', 'userAgent', 'referer', 'utm', 'click', 'screen'])
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn ($v) => $this->formatVisitForExport($v))
+            ->toArray();
+
+        $this->logDsr('export', (string) $teamId, 'team_id', count($visits));
+
+        return $visits;
+    }
+
+    /**
      * Delete all visit data for an anonymous session.
      */
     public function deleteBySessionId(string $sessionId): array
@@ -117,6 +163,8 @@ class PrivacyService
         return [
             'id'                 => $visit->id,
             'session_id'         => $visit->session_id,
+            'team_id'            => $visit->team_id,
+            'custom_id'          => $visit->custom_id,
             'route'              => $visit->route_name,
             'visited_at'         => $visit->created_at?->toISOString(),
             'country'            => $visit->country_code,

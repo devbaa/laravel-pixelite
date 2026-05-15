@@ -8,11 +8,12 @@ use Illuminate\Console\Command;
 class ExportUserDataCommand extends Command
 {
     protected $signature = 'pixelite:export-user-data
-        {identifier  : User ID whose data should be exported}
-        {--output=   : Write JSON to this file path instead of stdout}
-        {--pretty    : Pretty-print the JSON output}';
+        {identifier      : The identifier value to export}
+        {--type=user_id  : Identifier type: user_id | team_id}
+        {--output=       : Write JSON to this file path instead of stdout}
+        {--pretty        : Pretty-print the JSON output}';
 
-    protected $description = 'Export all visit data for a user as JSON (GDPR Art.20 — Data Portability)';
+    protected $description = 'Export all visit data for a user or team as JSON (GDPR Art.20 — Data Portability)';
 
     public function __construct(private readonly PrivacyService $privacy)
     {
@@ -27,8 +28,18 @@ class ExportUserDataCommand extends Command
             return self::FAILURE;
         }
 
-        $userId = (int) $this->argument('identifier');
-        $visits = $this->privacy->exportByUserId($userId);
+        $type = $this->option('type');
+        $identifier = $this->argument('identifier');
+
+        if (! in_array($type, ['user_id', 'team_id'], true)) {
+            $this->error('Invalid --type value. Use: user_id  |  team_id');
+
+            return self::FAILURE;
+        }
+
+        $visits = $type === 'team_id'
+            ? $this->privacy->exportByTeamId((int) $identifier)
+            : $this->privacy->exportByUserId((int) $identifier);
 
         $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
         if ($this->option('pretty')) {
@@ -37,7 +48,7 @@ class ExportUserDataCommand extends Command
 
         $payload = json_encode([
             'export_date'   => now()->toISOString(),
-            'user_id'       => $userId,
+            $type           => (int) $identifier,
             'total_records' => count($visits),
             'visits'        => $visits,
         ], $flags);
@@ -47,7 +58,7 @@ class ExportUserDataCommand extends Command
         if ($outputPath) {
             file_put_contents($outputPath, $payload);
             $this->info('✓ Exported '.count($visits)." record(s) to: {$outputPath}");
-            $this->info('  Export request logged to pixelite_dsr.');
+            $this->info("  Export request logged to pixelite_dsr ({$type}: {$identifier}).");
         } else {
             $this->output->writeln($payload);
         }
