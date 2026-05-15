@@ -8,17 +8,38 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::create('visits', function (Blueprint $table): void {
+        $userIdFmt  = config('pixelite.tracking.user_id.format', 'integer');
+        $teamIdFmt  = config('pixelite.tracking.team_id.format', 'integer');
+        $customFmt  = config('pixelite.tracking.custom_id.format', 'string');
+
+        Schema::create('visits', function (Blueprint $table) use ($userIdFmt, $teamIdFmt, $customFmt): void {
             $table->id();
-            $table->foreignId('user_id')->nullable()->constrained()->index();
-            $table->unsignedBigInteger('team_id')->nullable()->index();
+
+            // No FK constraint — analytics tables don't need referential integrity
+            // and FK types must match the users/teams table PK format.
+            match ($userIdFmt) {
+                'uuid'  => $table->char('user_id', 36)->nullable()->index(),
+                'ulid'  => $table->char('user_id', 26)->nullable()->index(),
+                default => $table->unsignedBigInteger('user_id')->nullable()->index(),
+            };
+
+            match ($teamIdFmt) {
+                'uuid'  => $table->char('team_id', 36)->nullable()->index(),
+                'ulid'  => $table->char('team_id', 26)->nullable()->index(),
+                default => $table->unsignedBigInteger('team_id')->nullable()->index(),
+            };
+
             $table->string('session_id', 64)->nullable()->index();
-            $table->string('custom_id', 255)->nullable()->index();
+
+            match ($customFmt) {
+                'uuid'    => $table->char('custom_id', 36)->nullable()->index(),
+                'ulid'    => $table->char('custom_id', 26)->nullable()->index(),
+                'integer' => $table->unsignedBigInteger('custom_id')->nullable()->index(),
+                default   => $table->string('custom_id', 255)->nullable()->index(),
+            };
+
             $table->string('route_name', 255)->nullable();
             $table->json('route_params')->nullable();
             $table->binary('ip', 16)->nullable()->index();
@@ -41,9 +62,6 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::dropIfExists('visits');

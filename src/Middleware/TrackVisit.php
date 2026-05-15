@@ -64,8 +64,8 @@ class TrackVisit
         $crossSession = config('pixelite.profiling.cross_session', true);
 
         $raw = VisitRaw::create([
-            'user_id'     => $crossSession ? auth()->id() : null,
-            'team_id'     => $this->resolveTrackedId('tracking.team_id', $request),
+            'user_id'     => $crossSession ? $this->resolveUserId() : null,
+            'team_id'     => $this->resolveTrackedId('pixelite.tracking.team_id', $request),
             'session_id'  => $request->session()->getId(),
             'custom_id'   => $this->resolveCustomId($request),
             'route_name'  => $request->route()->getName(),
@@ -116,10 +116,25 @@ class TrackVisit
     }
 
     /**
-     * Resolve team_id (integer) using the configured dot-notation resolver.
-     * Returns null when tracking is disabled or the resolved value is empty.
+     * Resolve the authenticated user ID, cast to the configured format.
      */
-    private function resolveTrackedId(string $configKey, Request $request): ?int
+    private function resolveUserId(): int|string|null
+    {
+        $id = auth()->id();
+        if ($id === null) {
+            return null;
+        }
+
+        $format = config('pixelite.tracking.user_id.format', 'integer');
+
+        return in_array($format, ['uuid', 'ulid'], true) ? (string) $id : (int) $id;
+    }
+
+    /**
+     * Resolve team_id using the configured dot-notation resolver.
+     * Casts the result to int or string depending on the configured format.
+     */
+    private function resolveTrackedId(string $configKey, Request $request): int|string|null
     {
         $cfg = config($configKey, []);
         if (empty($cfg['enabled'])) {
@@ -128,14 +143,20 @@ class TrackVisit
 
         $value = $this->resolveByDotNotation($cfg['resolver'] ?? '', $request);
 
-        return $value !== null && $value !== '' ? (int) $value : null;
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $format = $cfg['format'] ?? 'integer';
+
+        return in_array($format, ['uuid', 'ulid'], true) ? (string) $value : (int) $value;
     }
 
     /**
-     * Resolve custom_id (string) using the configured dot-notation resolver.
-     * Returns null when tracking is disabled or the resolved value is empty.
+     * Resolve custom_id using the configured dot-notation resolver.
+     * Handles string, uuid, ulid, and integer formats.
      */
-    private function resolveCustomId(Request $request): ?string
+    private function resolveCustomId(Request $request): int|string|null
     {
         $cfg = config('pixelite.tracking.custom_id', []);
         if (empty($cfg['enabled'])) {
@@ -144,9 +165,17 @@ class TrackVisit
 
         $value = $this->resolveByDotNotation($cfg['resolver'] ?? '', $request);
 
-        return $value !== null && $value !== ''
-            ? $this->sanitizeString((string) $value, 255)
-            : null;
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $format = $cfg['format'] ?? 'string';
+
+        if ($format === 'integer') {
+            return (int) $value;
+        }
+
+        return $this->sanitizeString((string) $value, $format === 'uuid' ? 36 : ($format === 'ulid' ? 26 : 255));
     }
 
     /**

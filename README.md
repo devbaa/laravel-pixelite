@@ -1,20 +1,22 @@
 # Laravel Pixelite
 
-A privacy-first visit analytics package for Laravel. Captures page visits via middleware, processes them asynchronously through a job pipeline, and ships with a full compliance toolkit for GDPR, CCPA, and KVKK.
+A privacy-first visit analytics package for Laravel. Captures page visits via middleware, processes them asynchronously through a high-performance batch pipeline, and ships with a full compliance toolkit for GDPR, CCPA, and KVKK.
 
 ## Features
 
-- **Two-stage pipeline** — lightweight middleware captures raw visits; a queued job normalises them in batches
+- **Two-stage pipeline** — lightweight middleware captures raw visits; a queued job normalises them in batches (~15 queries per batch regardless of size)
 - **Privacy compliance** — interactive install wizard with presets for GDPR, CCPA, KVKK
+- **Flexible ID formats** — user_id, team_id, and custom_id support `integer`, `uuid`, and `ulid`; custom_id also supports `string`
 - **IP anonymisation** — none / partial (last octet masked) / full (not stored)
 - **Consent management** — opt-in cookie gate (GDPR/KVKK) or opt-out cookie (CCPA)
 - **Data retention** — automatic purge of raw and processed records on a schedule
 - **Right to erasure** — delete all data for a user, team, session, or custom identifier
 - **Data portability** — export visit history to JSON
-- **Multi-tenancy** — store `team_id` and a configurable `custom_id` (e.g. `shop_id`) with every visit
+- **Multi-tenancy** — named `team_id` and a fully configurable `custom_id` (e.g. `shop_id`) with every visit
 - **GeoIP** — country, region, city from MaxMind GeoLite2
 - **User agent parsing** — device category, OS, browser (no third-party library)
 - **UTM & click ID tracking** — gclid, fbclid, msclkid, ttclid, li_fat_id
+- **Supervisor-ready daemon** — continuous processing with PCNTL signal handling and memory-limit restart
 
 ---
 
@@ -38,7 +40,9 @@ composer require boralp/laravel-pixelite
 php artisan pixelite:install
 ```
 
-The wizard asks which privacy regulation applies and configures everything — env vars, migrations, and assets — in one pass.
+The wizard runs two sections:
+
+**1 — Compliance preset** — which privacy regulation applies?
 
 ```
 Which privacy regulation applies to your application?
@@ -49,15 +53,59 @@ Which privacy regulation applies to your application?
   [4] Multiple regulations — Apply strictest settings (GDPR + CCPA + KVKK)
 ```
 
-To skip the wizard and apply a preset non-interactively:
+**2 — Identifier Formats** — always asked, configures DB column types:
+
+```
+── Identifier Formats ──────────────────────────────────────────────────────
+Match these to your Laravel application's primary key format.
+This determines the column types in the published migrations.
+
+What format are your user IDs? (auth()->id())
+  [0] integer — bigint unsigned (default Laravel, e.g. 1, 42)
+  [1] uuid    — char(36)  (HasUuids, e.g. "550e8400-e29b-41d4...")
+  [2] ulid    — char(26)  (HasUlids, e.g. "01ARZ3NDEKTSV4RRFFQ...")
+
+Track a team / organisation ID with each visit? (yes/no) [no]
+
+Track a custom identifier? (e.g. shop_id, account_id, tenant_id) (yes/no) [no]
+> yes
+
+What should this identifier be called?
+> shop_id
+
+What format is shop_id?
+  [0] string  — varchar(255) for any text value
+  [1] uuid    — char(36)
+  [2] ulid    — char(26)
+  [3] integer — bigint unsigned for numeric IDs
+
+How is shop_id resolved?
+> user.shop_id
+```
+
+After the wizard writes your `.env`, the published migrations use those format settings to create the right column types.
+
+#### Non-interactive flags
+
+All wizard settings can be passed as flags:
 
 ```bash
-php artisan pixelite:install --mode=gdpr
+php artisan pixelite:install \
+  --mode=gdpr \
+  --user-id-format=uuid \
+  --team-id-format=uuid \
+  --team-id-label=organization_id \
+  --custom-id-label=shop_id \
+  --custom-id-format=string \
+  --no-publish
 ```
 
 ### Manual setup (without the wizard)
 
 ```bash
+# Set ID formats in .env first (determines column types in migrations)
+echo "PIXELITE_USER_ID_FORMAT=integer" >> .env
+
 # Publish config
 php artisan vendor:publish --tag=pixelite-config
 
@@ -124,46 +172,99 @@ The default path is `storage/app/private/GeoLite2-City.mmdb`.
 
 ## Processing visits
 
-Raw visit records are normalised by a queued job. Dispatch it from a scheduler or run it manually:
+### Queue job (recommended for most apps)
 
 ```php
-// App\Console\Kernel — recommended
-$schedule->job(new \Boralp\Pixelite\Jobs\ProcessVisitRaw(500))->everyMinute();
-
-// Or via artisan
-php artisan pixelite:process-visits --batch-size=500
+// App\Console\Kernel
+$schedule->job(new \Boralp\Pixelite\Jobs\ProcessVisitRaw(200))->everyMinute();
 ```
+
+### Supervisor daemon (recommended for high-traffic apps)
+
+The daemon processes visits continuously with no per-minute latency and gracefully shuts down on `SIGTERM`/`SIGINT`:
+
+```bash
+php artisan pixelite:daemon --batch-size=200 --sleep=500 --max-memory=128
+```
+
+Supervisor config (`/etc/supervisor/conf.d/pixelite.conf`):
+
+```ini
+[program:pixelite-daemon]
+command=php /var/www/artisan pixelite:daemon --batch-size=200
+numprocs=2
+autostart=true
+autorestart=true
+stopwaitsecs=30
+stdout_logfile=/var/log/pixelite-daemon.log
+```
+
+`numprocs=2` is safe — concurrent workers use `SELECT FOR UPDATE` to claim batches atomically with no duplicates.
+
+---
+
+## Identifier formats
+
+Pixelite stores `user_id`, `team_id`, and `custom_id` in DB columns whose type is determined at migration time from your `.env`. Match these to your Laravel app's primary key format:
+
+| Format | Column type | Use when |
+|---|---|---|
+| `integer` | `bigint unsigned` | Default Laravel auto-increment IDs |
+| `uuid` | `char(36)` | `HasUuids` trait, Ramsey UUID |
+| `ulid` | `char(26)` | `HasUlids` trait |
+| `string` | `varchar(255)` | `custom_id` only — any text value |
+
+Set in `.env` (or let the wizard ask):
+
+```env
+PIXELITE_USER_ID_FORMAT=uuid
+PIXELITE_TEAM_ID_FORMAT=uuid
+PIXELITE_CUSTOM_ID_FORMAT=string
+```
+
+> **Important:** Changing formats after running migrations requires a manual `ALTER TABLE`. Set these before running `migrate`.
+
+### UUID example
+
+If your `User` model uses `HasUuids`:
+
+```bash
+php artisan pixelite:install --user-id-format=uuid
+```
+
+Pixelite stores `auth()->id()` as a 36-char string in a `char(36)` column — no casting needed.
 
 ---
 
 ## Multi-tenancy & custom identifiers
 
-Pixelite can store a `team_id` and one arbitrary string identifier (e.g. `shop_id`) alongside every visit. Both are indexed and available in all deletion/export commands.
+### team_id (with custom label)
 
-### team_id
-
-Enable in `.env`:
+Track an organisation/workspace/tenant ID with every visit:
 
 ```env
 PIXELITE_TRACK_TEAM_ID=true
+PIXELITE_TEAM_ID_LABEL=organization_id   # shown in reports and commands
+PIXELITE_TEAM_ID_FORMAT=integer
 PIXELITE_TEAM_ID_RESOLVER=user.team_id
 ```
 
-`user.team_id` reads `auth()->user()->team_id` at request time. See resolver syntax below.
+The `PIXELITE_TEAM_ID_LABEL` is used only for human-readable output; the column is always named `team_id` in the database.
 
-### Custom identifier (e.g. shop_id)
+### custom_id (named and typed)
+
+Track any additional identifier with a name and format of your choice:
 
 ```env
 PIXELITE_TRACK_CUSTOM_ID=true
-PIXELITE_CUSTOM_ID_LABEL=shop_id
+PIXELITE_CUSTOM_ID_LABEL=shop_id         # shown in reports; sanitized to snake_case
+PIXELITE_CUSTOM_ID_FORMAT=string         # string | uuid | ulid | integer
 PIXELITE_CUSTOM_ID_RESOLVER=user.shop_id
 ```
 
-`PIXELITE_CUSTOM_ID_LABEL` is the human-readable name shown in command output. The value is always stored in the `custom_id` column.
-
 ### Resolver syntax
 
-The resolver is a `source.key` string evaluated at runtime:
+The resolver is a `source.key` string evaluated at runtime on every tracked request:
 
 | Resolver | Resolved value |
 |---|---|
@@ -185,13 +286,13 @@ PIXELITE_CONSENT_COOKIE=pixelite_consent
 PIXELITE_CONSENT_DEFAULT=denied
 ```
 
-Set the cookie from your consent banner before the page loads:
+Set the cookie from your consent banner:
 
 ```js
-// When the user clicks "Accept"
+// User accepts
 document.cookie = 'pixelite_consent=granted; path=/; max-age=31536000; SameSite=Lax';
 
-// When the user clicks "Reject"
+// User rejects
 document.cookie = 'pixelite_consent=denied; path=/; max-age=31536000; SameSite=Lax';
 ```
 
@@ -276,16 +377,30 @@ Interactive setup wizard.
 
 ```bash
 php artisan pixelite:install
-php artisan pixelite:install --mode=gdpr          # non-interactive preset
-php artisan pixelite:install --no-publish          # skip migration/asset publishing
+php artisan pixelite:install --mode=gdpr              # non-interactive compliance preset
+php artisan pixelite:install --user-id-format=uuid    # set user ID format
+php artisan pixelite:install --custom-id-label=shop_id --custom-id-format=string
+php artisan pixelite:install --no-publish             # skip migration/asset publishing
+```
+
+### `pixelite:daemon`
+
+Continuous visit processor (Supervisor-ready).
+
+```bash
+php artisan pixelite:daemon                          # default settings
+php artisan pixelite:daemon --batch-size=200         # records per cycle
+php artisan pixelite:daemon --sleep=500              # ms to sleep when queue is empty
+php artisan pixelite:daemon --max-memory=128         # restart after N MB (mirrors queue:work)
+php artisan pixelite:daemon --once                   # process one batch then exit (for testing)
 ```
 
 ### `pixelite:process-visits`
 
-Synchronously process a batch of raw visits.
+Synchronously process one batch.
 
 ```bash
-php artisan pixelite:process-visits --batch-size=500
+php artisan pixelite:process-visits --batch-size=200
 ```
 
 ### `pixelite:purge-data`
@@ -304,6 +419,9 @@ Permanently erase all visit data for a given identifier (GDPR Art.17 — Right t
 ```bash
 # By user ID (default)
 php artisan pixelite:delete-user-data 42
+
+# By UUID user ID
+php artisan pixelite:delete-user-data "550e8400-e29b-41d4-a716-446655440000"
 
 # By team ID
 php artisan pixelite:delete-user-data 7 --type=team_id
@@ -339,15 +457,17 @@ php artisan pixelite:export-user-data 42 --output=/tmp/user-42.json --pretty
 
 ## Database schema
 
+Column types for `user_id`, `team_id`, and `custom_id` depend on `PIXELITE_*_FORMAT` settings.
+
 ### `visit_raws` (temporary, deleted after processing)
 
 | Column | Type | Description |
 |---|---|---|
 | `id` | bigint | Primary key |
-| `user_id` | bigint | Authenticated user (nullable) |
-| `team_id` | bigint | Team/organisation (nullable) |
+| `user_id` | int / char(36) / char(26) | Authenticated user (format-dependent) |
+| `team_id` | int / char(36) / char(26) | Team/organisation (format-dependent, nullable) |
 | `session_id` | varchar | Laravel session ID |
-| `custom_id` | varchar 255 | Custom identifier, e.g. shop_id (nullable) |
+| `custom_id` | varchar / char / int | Custom identifier (format-dependent, nullable) |
 | `route_name` | varchar | Laravel named route |
 | `route_params` | json | Route parameters |
 | `ip` | binary 16 | IPv4-mapped IPv6 binary |
@@ -392,12 +512,6 @@ Same identifier columns as above, plus:
 ---
 
 ## Full configuration reference
-
-Publish the config file to customise beyond env vars:
-
-```bash
-php artisan vendor:publish --tag=pixelite-config
-```
 
 ```php
 // config/pixelite.php
@@ -445,14 +559,25 @@ return [
     ],
 
     'tracking' => [
+        // user_id: format for the auth()->id() column
+        'user_id' => [
+            'format' => env('PIXELITE_USER_ID_FORMAT', 'integer'), // integer|uuid|ulid
+        ],
+
+        // team_id: optional named multi-tenant identifier
         'team_id' => [
             'enabled'  => env('PIXELITE_TRACK_TEAM_ID', false),
+            'label'    => env('PIXELITE_TEAM_ID_LABEL', 'team_id'),
             'resolver' => env('PIXELITE_TEAM_ID_RESOLVER', 'user.team_id'),
+            'format'   => env('PIXELITE_TEAM_ID_FORMAT', 'integer'), // integer|uuid|ulid
         ],
+
+        // custom_id: one additional named identifier of any type
         'custom_id' => [
             'enabled'  => env('PIXELITE_TRACK_CUSTOM_ID', false),
             'label'    => env('PIXELITE_CUSTOM_ID_LABEL', 'custom_id'),
             'resolver' => env('PIXELITE_CUSTOM_ID_RESOLVER', 'user.custom_id'),
+            'format'   => env('PIXELITE_CUSTOM_ID_FORMAT', 'string'), // string|uuid|ulid|integer
         ],
     ],
 
@@ -462,34 +587,32 @@ return [
 
 ---
 
-## Example: shop_id tracking for a SaaS platform
+## Example: SaaS shop analytics with UUID users
+
+A multi-tenant SaaS where users are identified by UUID and each user belongs to a shop:
 
 ```bash
-php artisan pixelite:install
-```
-
-When asked about the custom identifier:
-
-```
-Track a custom string identifier? (e.g. shop_id, account_id, tenant_id) [no]
-> yes
-
-What is the human-readable name for this identifier?
-> shop_id
-
-How is it resolved?
-> user.shop_id
+php artisan pixelite:install \
+  --mode=gdpr \
+  --user-id-format=uuid \
+  --custom-id-label=shop_id \
+  --custom-id-format=string
 ```
 
 This writes to `.env`:
 
 ```env
+PIXELITE_COMPLIANCE_MODE=gdpr
+PIXELITE_USER_ID_FORMAT=uuid
 PIXELITE_TRACK_CUSTOM_ID=true
 PIXELITE_CUSTOM_ID_LABEL=shop_id
+PIXELITE_CUSTOM_ID_FORMAT=string
 PIXELITE_CUSTOM_ID_RESOLVER=user.shop_id
 ```
 
-Every visit now captures `auth()->user()->shop_id`. To erase all visits for a shop:
+And publishes migrations with `char(36)` for `user_id` and `varchar(255)` for `custom_id`.
+
+To erase all visits for a specific shop:
 
 ```bash
 php artisan pixelite:delete-user-data "my-shop-handle" --type=custom_id --force
@@ -497,16 +620,35 @@ php artisan pixelite:delete-user-data "my-shop-handle" --type=custom_id --force
 
 ---
 
-## Upgrading existing installations
+## Upgrading from earlier versions
 
-If you installed Pixelite before `team_id` and `custom_id` were added, run the additive migration:
+### Adding team_id / custom_id to existing tables
+
+If you installed Pixelite before these columns were added:
 
 ```bash
 php artisan vendor:publish --tag=pixelite-migrations
 php artisan migrate
 ```
 
-The migration uses `hasColumn` guards and is safe to run multiple times.
+The additive migration uses `hasColumn` guards and is safe to run multiple times.
+
+### Adding ID format support
+
+The new format settings default to `integer` / `string`, which matches existing column types. No migration is needed unless you want to change formats.
+
+To change a format on an existing installation, write a migration manually:
+
+```php
+// Change user_id from integer to uuid
+Schema::table('visit_raws', function (Blueprint $table): void {
+    $table->dropColumn('user_id');
+});
+Schema::table('visit_raws', function (Blueprint $table): void {
+    $table->char('user_id', 36)->nullable()->index()->after('id');
+});
+// Repeat for the visits table
+```
 
 ---
 

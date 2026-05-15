@@ -48,8 +48,9 @@ abstract class TestCase extends OrchestraTestCase
             ],
             'profiling' => ['cross_session' => true, 'behavioral' => true],
             'tracking'  => [
-                'team_id'   => ['enabled' => false, 'resolver' => 'user.team_id'],
-                'custom_id' => ['enabled' => false, 'label' => 'custom_id', 'resolver' => 'user.custom_id'],
+                'user_id'   => ['format' => 'integer'],
+                'team_id'   => ['enabled' => false, 'label' => 'team_id', 'resolver' => 'user.team_id', 'format' => 'integer'],
+                'custom_id' => ['enabled' => false, 'label' => 'custom_id', 'resolver' => 'user.custom_id', 'format' => 'string'],
             ],
             'geo_db_path' => '',
         ]);

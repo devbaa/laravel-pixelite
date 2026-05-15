@@ -110,28 +110,55 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Identifier Formats
+    |--------------------------------------------------------------------------
+    | Configure the DB column type for each tracked identifier to match your
+    | Laravel application's primary key format. Set during `pixelite:install`.
+    |
+    | user_id format  — integer (default bigint) | uuid (char 36) | ulid (char 26)
+    | team_id format  — same options as user_id
+    | custom_id format— string (varchar 255) | uuid (char 36) | ulid (char 26)
+    |                   | integer (bigint unsigned)
+    |
+    | ⚠  Changing these after running migrations requires a manual migration
+    |    to alter the column types.
+    */
+
+    /*
+    |--------------------------------------------------------------------------
     | Multi-tenancy & Custom Identifiers
     |--------------------------------------------------------------------------
-    | team_id   — store a team / organisation ID alongside every visit.
-    |             Mirrors user_id but for team-scoped multi-tenant applications.
+    | user_id  — built-in; links visits to auth()->id(). Format matches above.
     |
-    | custom_id — store any string identifier (e.g. shop_id, account_id).
-    |             The `label` is shown in command output and the install wizard.
-    |             The `resolver` uses dot-notation to pull the value at runtime:
-    |               user.shop_id     → auth()->user()?->shop_id
-    |               session.shop_id  → $request->session()->get('shop_id')
-    |               request.shop_id  → $request->input('shop_id')
-    |               header.X-Shop-Id → $request->header('X-Shop-Id')
+    | team_id  — store a named team / organisation ID alongside every visit.
+    |            label    : human-readable name shown in reports and commands.
+    |            resolver : dot-notation source (see custom_id docs below).
+    |            format   : column type (integer | uuid | ulid).
+    |
+    | custom_id— store any additional identifier (e.g. shop_id, account_id).
+    |            label    : the identifier's name (e.g. "shop_id").
+    |            resolver : dot-notation source:
+    |              user.shop_id     → auth()->user()?->shop_id
+    |              session.shop_id  → $request->session()->get('shop_id')
+    |              request.shop_id  → $request->input('shop_id')
+    |              header.X-Shop-Id → $request->header('X-Shop-Id')
+    |            format   : column type (string | uuid | ulid | integer).
     */
     'tracking' => [
+        'user_id' => [
+            'format' => env('PIXELITE_USER_ID_FORMAT', 'integer'), // integer | uuid | ulid
+        ],
         'team_id' => [
             'enabled'  => env('PIXELITE_TRACK_TEAM_ID', false),
+            'label'    => env('PIXELITE_TEAM_ID_LABEL', 'team_id'),
             'resolver' => env('PIXELITE_TEAM_ID_RESOLVER', 'user.team_id'),
+            'format'   => env('PIXELITE_TEAM_ID_FORMAT', 'integer'), // integer | uuid | ulid
         ],
         'custom_id' => [
             'enabled'  => env('PIXELITE_TRACK_CUSTOM_ID', false),
             'label'    => env('PIXELITE_CUSTOM_ID_LABEL', 'custom_id'),
             'resolver' => env('PIXELITE_CUSTOM_ID_RESOLVER', 'user.custom_id'),
+            'format'   => env('PIXELITE_CUSTOM_ID_FORMAT', 'string'), // string | uuid | ulid | integer
         ],
     ],
 
