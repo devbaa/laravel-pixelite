@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Boralp\Pixelite\Console\Commands;
 
 use Boralp\Pixelite\Services\PrivacyService;

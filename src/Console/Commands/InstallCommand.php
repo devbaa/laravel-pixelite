@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Boralp\Pixelite\Console\Commands;
 
 use Illuminate\Console\Command;
@@ -28,7 +30,7 @@ class InstallCommand extends Command
         $mode = $this->option('mode');
 
         if ($mode !== null && ! array_key_exists($mode, self::MODES)) {
-            $this->error("Unknown mode "{$mode}". Valid options: ".implode(', ', array_keys(self::MODES)));
+            $this->error("Unknown mode \"{$mode}\". Valid options: ".implode(', ', array_keys(self::MODES)));
 
             return self::FAILURE;
         }

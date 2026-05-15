@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Boralp\Pixelite\Middleware;
 
 use Boralp\Pixelite\Models\VisitRaw;

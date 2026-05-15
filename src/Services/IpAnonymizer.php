@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Boralp\Pixelite\Services;
 
 class IpAnonymizer
@@ -13,8 +15,12 @@ class IpAnonymizer
      */
     public function anonymize(?string $ip, string $level): ?string
     {
-        if (! $ip || $level === 'none') {
+        if ($level === 'none') {
             return $ip;
+        }
+
+        if (! $ip) {
+            return null;
         }
 
         if ($level === 'full') {

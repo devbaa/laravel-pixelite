@@ -1,7 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Boralp\Pixelite;
 
+use Boralp\Pixelite\Console\Commands\DaemonCommand;
 use Boralp\Pixelite\Console\Commands\DeleteUserDataCommand;
 use Boralp\Pixelite\Console\Commands\ExportUserDataCommand;
 use Boralp\Pixelite\Console\Commands\InstallCommand;
@@ -10,9 +13,10 @@ use Boralp\Pixelite\Console\Commands\PurgeDataCommand;
 use Boralp\Pixelite\Middleware\TrackVisit;
 use Boralp\Pixelite\Services\IpAnonymizer;
 use Boralp\Pixelite\Services\PrivacyService;
+use Boralp\Pixelite\Services\VisitProcessor;
 use Illuminate\Support\ServiceProvider;
 
-class PixeliteServiceProvider extends ServiceProvider
+final class PixeliteServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
@@ -20,6 +24,7 @@ class PixeliteServiceProvider extends ServiceProvider
 
         $this->app->singleton(IpAnonymizer::class);
         $this->app->singleton(PrivacyService::class);
+        $this->app->singleton(VisitProcessor::class);
     }
 
     public function boot(): void
@@ -50,6 +55,7 @@ class PixeliteServiceProvider extends ServiceProvider
                 PurgeDataCommand::class,
                 DeleteUserDataCommand::class,
                 ExportUserDataCommand::class,
+                DaemonCommand::class,
             ]);
         }
 
