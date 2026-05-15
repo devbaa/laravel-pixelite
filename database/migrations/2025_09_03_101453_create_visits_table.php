@@ -19,7 +19,7 @@ return new class extends Migration
             $table->json('route_params')->nullable();
             $table->binary('ip', 16)->nullable()->index();
             $table->string('country_code', 2)->nullable()->index();
-            $table->boolean('device_category')->default(0)->index();
+            $table->string('device_category', 16)->nullable()->index();
             $table->string('os_name', 16)->index()->nullable();
             $table->string('referer_domain', 255)->index()->nullable();
             $table->foreignId('geo_id')->nullable()->constrained('geos');
