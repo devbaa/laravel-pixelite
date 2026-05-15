@@ -23,6 +23,7 @@ class VisitRaw extends Model
     protected $casts = [
         'route_params' => 'array',
         'payload' => 'array',
+        'payload_js' => 'array',
         'created_at' => 'datetime',
         'total_time' => 'integer',
     ];
