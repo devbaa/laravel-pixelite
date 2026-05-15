@@ -154,8 +154,6 @@ const pixelite = (() => {
 
     // Start heartbeat if initially visible
     if (isCurrentlyVisible) startHeartbeat();
-
-    console.log("Pixelite initialized", { traceId, initiallyVisible: isCurrentlyVisible });
   }
 
   return { init, cleanup, isVisible: () => isCurrentlyVisible, getTotalTime: getTotalVisibleTimeSeconds };
