@@ -1,17 +1,21 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Boralp\Pixelite\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class Visit extends Model
+final class Visit extends Model
 {
-    const UPDATED_AT = null;
+    public const UPDATED_AT = null;
 
     protected $fillable = [
         'user_id',
+        'team_id',
         'session_id',
+        'custom_id',
         'route_name',
         'route_params',
         'ip',
@@ -34,11 +38,13 @@ class Visit extends Model
 
     protected $casts = [
         'route_params' => 'array',
-        'payload' => 'array',
-        'timezone' => 'integer',
-        'total_time' => 'integer',
-        'created_at' => 'datetime',
+        'payload'      => 'array',
+        'timezone'     => 'integer',
+        'total_time'   => 'integer',
+        'created_at'   => 'datetime',
     ];
+
+    // ── Relationships ─────────────────────────────────────────────────────────
 
     public function geo(): BelongsTo
     {
@@ -70,31 +76,15 @@ class Visit extends Model
         return $this->belongsTo(Screen::class, 'screen_id');
     }
 
-    public function setIpAttribute(mixed $value): void
-    {
-        if (! is_string($value) || $value === '') {
-            $this->attributes['ip'] = null;
-
-            return;
-        }
-
-        // remove null bytes and control characters
-        $value = trim(preg_replace('/[\x00-\x1F\x7F]/u', '', $value));
-
-        // handle forwarded headers: take first IP only
-        if (str_contains($value, ',')) {
-            $value = trim(explode(',', $value)[0]);
-        }
-
-        // validate IPv4 / IPv6
-        if (! filter_var($value, FILTER_VALIDATE_IP)) {
-            $this->attributes['ip'] = null;
-
-            return;
-        }
-
-        $this->attributes['ip'] = inet_pton($value);
-    }
+    // ── IP accessor ──────────────────────────────────────────────────────────
+    //
+    // The ip column stores raw binary (4 or 16 bytes written directly via
+    // Visit::insert() in VisitProcessor — bulk inserts bypass Eloquent mutators).
+    // This accessor converts binary back to a human-readable string for display.
+    //
+    // There is intentionally NO setIpAttribute: all Visit rows are created via
+    // bulk insert which bypasses mutators.  String IP input is not supported on
+    // this model.
 
     public function getIpAttribute(mixed $value): ?string
     {
@@ -102,15 +92,14 @@ class Visit extends Model
             return null;
         }
 
-        $len = strlen($value);
+        $len = strlen((string) $value);
 
-        // only valid binary lengths
         if ($len !== 4 && $len !== 16) {
             return null;
         }
 
-        $ip = inet_ntop($value);
+        $result = inet_ntop((string) $value);
 
-        return $ip === false ? null : $ip;
+        return $result !== false ? $result : null;
     }
 }

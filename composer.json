@@ -1,11 +1,16 @@
 {
   "name": "boralp/laravel-pixelite",
-  "description": "Laravel middleware package for collecting route statistics and analytics",
+  "description": "Privacy-first visit analytics for Laravel — GDPR, CCPA, KVKK compliant",
   "type": "library",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "autoload": {
     "psr-4": {
       "Boralp\\Pixelite\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Boralp\\Pixelite\\Tests\\": "tests/"
     }
   },
   "extra": {
@@ -20,6 +25,16 @@
     "geoip2/geoip2": "^3.2.0"
   },
   "require-dev": {
-    "laravel/pint": "^1.24"
-  }
+    "laravel/pint": "^1.24",
+    "orchestra/testbench": "^9.0",
+    "phpunit/phpunit": "^11.0"
+  },
+  "scripts": {
+    "test": "phpunit",
+    "test:unit": "phpunit --testsuite=Unit",
+    "test:feature": "phpunit --testsuite=Feature",
+    "lint": "pint"
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
 }

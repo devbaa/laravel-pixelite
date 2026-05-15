@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Boralp\Pixelite\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +12,9 @@ class VisitRaw extends Model
 
     protected $fillable = [
         'user_id',
+        'team_id',
         'session_id',
+        'custom_id',
         'route_name',
         'route_params',
         'ip',

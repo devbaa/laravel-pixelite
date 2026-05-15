@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
@@ -14,7 +16,9 @@ return new class extends Migration
         Schema::create('visits', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained()->index();
+            $table->unsignedBigInteger('team_id')->nullable()->index();
             $table->string('session_id', 64)->nullable()->index();
+            $table->string('custom_id', 255)->nullable()->index();
             $table->string('route_name', 255)->nullable();
             $table->json('route_params')->nullable();
             $table->binary('ip', 16)->nullable()->index();

@@ -1,13 +1,15 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Boralp\Pixelite\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class ClickId extends Model
+final class ClickId extends Model
 {
-    const UPDATED_AT = null;
+    public const UPDATED_AT = null;
 
     protected $fillable = [
         'gclid',
@@ -24,6 +26,7 @@ class ClickId extends Model
 
     public function visits(): HasMany
     {
-        return $this->hasMany(Visit::class, 'click_id_id');
+        // FK column is 'click_id' on the visits table
+        return $this->hasMany(Visit::class, 'click_id');
     }
 }
