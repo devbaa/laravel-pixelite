@@ -40,7 +40,7 @@ composer require boralp/laravel-pixelite
 php artisan pixelite:install
 ```
 
-The wizard runs two sections:
+The wizard runs five sections:
 
 **1 — Compliance preset** — which privacy regulation applies?
 
@@ -83,6 +83,40 @@ How is shop_id resolved?
 > user.shop_id
 ```
 
+**3 — Cookie names** — shown only when consent and/or opt-out are enabled:
+
+```
+── Cookie Names ────────────────────────────────────────────────────────────
+Consent cookie name [pixelite_consent]:
+> my_consent_cookie
+
+Opt-out cookie name [pixelite_optout]:
+>
+```
+
+Press Enter to keep the default. These names must match what your consent banner sets.
+
+**4 — Processing strategy** — how should collected raw visits be processed?
+
+```
+── Processing strategy ─────────────────────────────────────────────────────
+How should Pixelite process collected visits?
+  [0] queue  — Process via Laravel scheduler (everyMinute). Simple, works everywhere.
+  [1] daemon — Run as a persistent Supervisor process. Lower latency, better for high traffic.
+```
+
+The next-steps block at the end of the wizard shows the exact command or Supervisor config for the chosen strategy.
+
+**5 — GeoIP database** — path to a MaxMind GeoLite2-City database:
+
+```
+── GeoIP ────────────────────────────────────────────────────────────────────
+Path to your GeoLite2-City.mmdb file (leave blank to disable geo collection):
+> /var/www/storage/app/GeoLite2-City.mmdb
+```
+
+Leaving blank sets `PIXELITE_COLLECT_GEO=false`. Providing a path sets `PIXELITE_COLLECT_GEO=true` and writes the path to `PIXELITE_GEO_DB_PATH`. The wizard warns (but does not abort) if the file is not found at the given path.
+
 After the wizard writes your `.env`, the published migrations use those format settings to create the right column types.
 
 #### Non-interactive flags
@@ -97,6 +131,10 @@ php artisan pixelite:install \
   --team-id-label=organization_id \
   --custom-id-label=shop_id \
   --custom-id-format=string \
+  --consent-cookie=my_consent_cookie \
+  --opt-out-cookie=my_optout_cookie \
+  --processing=daemon \
+  --geo-db-path=/var/www/storage/app/GeoLite2-City.mmdb \
   --no-publish
 ```
 
@@ -160,17 +198,20 @@ The script sends a heartbeat every 20 seconds while the tab is visible and posts
 
 ## GeoIP setup
 
-Download the free **GeoLite2-City** database from [maxmind.com](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data) and set the path:
+Download the free **GeoLite2-City** database from [maxmind.com](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data), then either provide the path during `pixelite:install` (wizard step 5) or set it manually:
 
 ```env
+PIXELITE_COLLECT_GEO=true
 PIXELITE_GEO_DB_PATH=/path/to/GeoLite2-City.mmdb
 ```
 
-The default path is `storage/app/private/GeoLite2-City.mmdb`.
+The default path is `storage/app/private/GeoLite2-City.mmdb`. Set `PIXELITE_COLLECT_GEO=false` to disable geo collection entirely without removing the database file.
 
 ---
 
 ## Processing visits
+
+The install wizard (step 4) asks which processing strategy to use and prints the exact setup instructions at the end. You can also configure it manually:
 
 ### Queue job (recommended for most apps)
 
@@ -373,14 +414,18 @@ $schedule->command('pixelite:purge-data --force')->daily();
 
 ### `pixelite:install`
 
-Interactive setup wizard.
+Interactive setup wizard (five sections: compliance, ID formats, cookie names, processing strategy, GeoIP).
 
 ```bash
 php artisan pixelite:install
-php artisan pixelite:install --mode=gdpr              # non-interactive compliance preset
-php artisan pixelite:install --user-id-format=uuid    # set user ID format
+php artisan pixelite:install --mode=gdpr                    # compliance preset
+php artisan pixelite:install --user-id-format=uuid          # user ID format
 php artisan pixelite:install --custom-id-label=shop_id --custom-id-format=string
-php artisan pixelite:install --no-publish             # skip migration/asset publishing
+php artisan pixelite:install --processing=daemon            # processing strategy
+php artisan pixelite:install --consent-cookie=my_consent    # consent cookie name
+php artisan pixelite:install --opt-out-cookie=my_optout     # opt-out cookie name
+php artisan pixelite:install --geo-db-path=/path/to/GeoLite2-City.mmdb
+php artisan pixelite:install --no-publish                   # skip migration/asset publishing
 ```
 
 ### `pixelite:daemon`
